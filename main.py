@@ -134,7 +134,7 @@ class ClientChannel(Channel):
     def Network_close(self, data):
         """
         Network_close(data) : called when a client sends data with the "close" tag\n
-        removes the player and client from server then sends a close command back to client
+        removes the player and client from server
         """
         global players, clients
         
@@ -144,7 +144,6 @@ class ClientChannel(Channel):
 
                 for c in clients:
                     if c[1] == p.pid:
-                        c[0].Send({"action": "close"})
                         clients.remove(c)
 
 class MyServer(Server): #server class
@@ -330,7 +329,8 @@ else: #client
             if event.type == pygame.QUIT:
                 print("QUIT")
                 stream.Send({"action": "close", "pid": player.pid})
-                #sys.exit()
+                connection.Pump()
+                sys.exit()
 
         #draw players
         for p in players:
