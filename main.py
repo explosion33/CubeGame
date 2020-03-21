@@ -94,6 +94,20 @@ class Player():
         
         self.pos = (x,y)
 
+        x,y = self.pos
+        r = self.getRect()
+        if r.top > size[1]:
+            self.pos = (x, 0 - self.size[1])
+        elif r.bottom < 0:
+            self.pos = (x, size[1])
+        
+        if r.right < 0:
+            self.pos = (size[0], y)
+        elif r.left > size[0]:
+            self.pos = (0 - self.size[0], y)
+        
+
+
     def draw(self):
         """
         draw() : returns a Surface object for the player
