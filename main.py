@@ -20,6 +20,11 @@ class Player():
         self.speed = 0.2
         self.pid = pid
 
+        self.dead = False
+        self.aState = 0
+        self.aTime = 0
+        self.Surface = self.draw(0)
+
     def getKeys(self):
         """
         getkeys (): returns a list of all the keys currently being pressed
@@ -46,7 +51,7 @@ class Player():
         """
         getRect() : returns a rect object for the player
         """
-        s = self.draw()
+        s = self.draw(0)
         r = s.get_rect(topleft=self.pos)
         return r
 
@@ -91,7 +96,8 @@ class Player():
             y += d
         if "w" in keys:
             y -= d
-        
+        if "g" in keys:
+            self.die()
         self.pos = (x,y)
 
         x,y = self.pos
@@ -105,15 +111,51 @@ class Player():
             self.pos = (size[0], y)
         elif r.left > size[0]:
             self.pos = (0 - self.size[0], y)
-        
 
-
-    def draw(self):
+    def draw(self, dt):
         """
         draw() : returns a Surface object for the player
         """
         s = pygame.Surface(self.size)
-        s.fill(self.color)
+        if self.dead == False:
+            s.fill(self.color)
+        elif self.dead == "dying":
+            print("dying")
+            self.aTime += dt
+
+            if self.aTime >= 25:
+                self.aTime = 0
+                s = pygame.image.load("imgs/explosion/" + str(self.aState) + ".png")
+                s = pygame.transform.scale(s, self.size)
+                s = s.convert_alpha()
+
+                r,g,b = self.color
+
+                for x in range(self.size[0]):
+                    for y in range(self.size[1]):
+                        a = s.get_at((x, y))[3]
+                        s.set_at((x, y), pygame.Color(r,g,b, a))
+
+
+                self.aState += 1
+
+                if self.aState > 15:
+                    self.dead = True
+                    self.aState = 0
+
+                #s.blit(s2, (0,0))
+                #pygame.transform.threshold(s, s, (51,255,0), threshold=(20,20,20), set_color=self.color)
+            else:
+                return self.Surface
+
+        elif self.dead:
+            global players, player
+            for p in players:
+                if p.pid == self.pid:
+                    players.remove(p)
+
+
+        self.Surface = s
         return s
     
     def dataOut(self):
@@ -129,6 +171,27 @@ class Player():
             }
         
         return out
+
+    def die(self):
+        self.dead ="dying"
+
+class Barrier():
+    def __init__(self, img, pos, axis, width, space=0):
+        self.img = img
+        self.pos = pos
+        self.axis = axis
+        self.space = space
+        self.size = ((width, size[1] - (2*self.space)))
+
+    def draw(self):
+        s = pygame.image.load(self.img)
+        w,h = s.get_size()
+
+        s = pygame.transform.scale(s, self.size)
+        if self.axis == "x":
+            s = pygame.transform.rotate(s, 90)
+
+        return s
 
 class ClientChannel(Channel):
     """
@@ -159,6 +222,13 @@ class ClientChannel(Channel):
                 for c in clients:
                     if c[1] == p.pid:
                         clients.remove(c)
+
+    def Network_die(self,data):
+        global players
+        for p in players:
+            if p.pid == data["pid"]:
+                p.die()
+
 
 class MyServer(Server): #server class
     """
@@ -241,9 +311,17 @@ class MyNetworkListener(ConnectionListener):
         for p in players:
             pid = p.pid
 
-            if pid != player.pid:
+            
+            if not p.dead:
+                if pid in list(data.keys()):
+                    if player:
+                        if pid != player.pid:
+                            p.pos = data[pid]
+                    else:
+                        p.pos = data[pid]
+                else:
+                    p.die()
 
-                p.pos = data[pid]
     
     def Network_close(self, data):
         """
@@ -251,7 +329,6 @@ class MyNetworkListener(ConnectionListener):
         """
         print("recievedClose")
         sys.exit()
-
 
 #init pygame and screen
 pygame.init()
@@ -302,10 +379,12 @@ if server: #server
                 
         #draw players
         for p in players:
-            display.blit(p.draw(), p.pos)
-        
+            display.blit(p.draw(dt), p.pos)
+
+
         #move player
-        player.move(dt, players)
+        if player:
+            player.move(dt, players)
 
         #update and refresh screen
         screen.blit(display, (0,0))
@@ -321,6 +400,10 @@ if server: #server
             for p in players:
                 data[p.pid] = p.pos
             k[0].Send({"action": "update", "playerData": data, "dt": dt})
+
+        if player:
+            if player.dead:
+                player = None
 
         myserver.Pump() #update messages
 
@@ -348,12 +431,19 @@ else: #client
 
         #draw players
         for p in players:
-            display.blit(p.draw(), p.pos)
+            display.blit(p.draw(dt), p.pos)
         
         #move player then send new pos
         if player:
             player.move(dt, players)
-            stream.Send({"action": "input", "pid": player.pid, "pos": player.pos})
+            if player:
+                stream.Send({"action": "input", "pid": player.pid, "pos": player.pos})
+
+            if player.dead:
+                stream.Send({"action": "die", "pid": player.pid})
+                player = None
+
+
 
         #update and refresh screen
         screen.blit(display, (0,0))
